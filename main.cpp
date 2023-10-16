@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <glob.h>
 
 std::vector<std::string> tokenize(const std::string& input) {
     std::vector<std::string> tokens;
@@ -67,11 +68,28 @@ int main() {
                 add_history(input.c_str());
                 std::vector<std::string> args = tokenize(input);
 
+                for (size_t i = 0; i < args.size(); ++i) {
+                    glob_t glob_result;
+                    if (glob(args[i].c_str(), GLOB_NOCHECK, NULL, &glob_result) == 0) {
+                        // Erase the original wildcard argument
+                        args.erase(args.begin() + i);
+                        
+                        // Iterate over the matched paths and insert them into args
+                        for (size_t j = 0; j < glob_result.gl_pathc; ++j) {
+                            args.insert(args.begin() + i + j, glob_result.gl_pathv[j]);
+                        }
+
+                        i += glob_result.gl_pathc - 1;  // Adjust the loop index
+                        globfree(&glob_result);
+                    }
+                }
+
+
                 if (args[0] == "exit") {
                     break;
                 } else if (args[0] == "cd" && args.size() > 1) {
-                    if (chdir(args[1].c_str()) != 0) {
-                        std::cerr << "Error changing directory" << std::endl;
+                if (chdir(args[1].c_str()) != 0) {
+                    std::cerr << "Error changing directory" << std::endl;
                     }
                 } else {
                     int status = executeCommand(args);
