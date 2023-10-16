@@ -11,6 +11,9 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <glob.h>
+#include "internal_functions.h"
+
+int lastExitCode;
 
 std::vector<std::string> tokenize(const std::string& input) {
     std::vector<std::string> tokens;
@@ -39,10 +42,9 @@ int executeCommand(const std::vector<std::string>& args) {
         std::cerr << "Command not found: " << args[0] << std::endl;
         exit(EXIT_FAILURE);
     } else {
-        int status;
-        waitpid(pid, &status, 0);
-        if (WIFEXITED(status)) {
-            return WEXITSTATUS(status);
+        lastExitCode = waitpid(pid, &lastExitCode, 0);
+        if (WIFEXITED(lastExitCode)) {
+            return WEXITSTATUS(lastExitCode);
         }
         return -1;
     }
@@ -50,6 +52,7 @@ int executeCommand(const std::vector<std::string>& args) {
 
 int main() {
     std::string input;
+    lastExitCode = 0;
 
     while (true) {
         char cwd[PATH_MAX];
@@ -85,17 +88,18 @@ int main() {
                 }
 
 
-                if (args[0] == "exit") {
-                    break;
-                } else if (args[0] == "cd" && args.size() > 1) {
-                if (chdir(args[1].c_str()) != 0) {
-                    std::cerr << "Error changing directory" << std::endl;
-                    }
+                if (args[0] == "merrno") {
+                    lastExitCode = merrno(args, lastExitCode);
+                } else if (args[0] == "mpwd") {
+                    lastExitCode = mpwd(args);
+                } else if (args[0] == "mcd") {
+                    lastExitCode = mcd(args);
+                } else if (args[0] == "mexit") {
+                    lastExitCode = mexit(args);
+                } else if (args[0] == "mecho") {
+                    lastExitCode = mecho(args);
                 } else {
-                    int status = executeCommand(args);
-                    if (status == -1) {
-                        std::cerr << "Command failed." << std::endl;
-                    }
+                    lastExitCode = executeCommand(args);
                 }
             }
         } else {
