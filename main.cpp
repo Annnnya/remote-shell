@@ -96,8 +96,8 @@ int main() {
                     lastExitCode = mcd(args);
                 } else if (args[0] == "mexit") {
                     lastExitCode = mexit(args);
-                } else if (args[0] == "mecho") {
-                    lastExitCode = mecho(args);
+                // } else if (args[0] == "mecho") {
+                //     lastExitCode = mecho(args);
                 } else {
                     lastExitCode = executeCommand(args);
                 }
