@@ -1,0 +1,4 @@
+echo abc $PATH
+mcd .. #commnent
+ls
+#commnent

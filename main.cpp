@@ -163,6 +163,8 @@ int main(int argc, char *argv[]) {
                 } else {
                     counter = 0;
                     commands.clear();
+                    script_execution = false;
+                    input = "";
                 }
             } else if (argc == 2) {
                 if (counter < commands.size()) {
