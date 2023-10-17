@@ -15,20 +15,37 @@
 #include "internal_functions.h"
 
 int lastExitCode;
-
 std::vector<std::string> tokenize(const std::string& input) {
     std::vector<std::string> tokens;
     std::string token;
     std::istringstream tokenStream(input);
+    bool inDoubleQuotes = false;
     while (std::getline(tokenStream, token, ' ')) {
-        if (token[0] == '#'){
+        if (token[0]=='#' && !inDoubleQuotes)
             break;
+        if (!token.empty() && token[0] == '\"' && token[token.length() - 1] == '\"' && token.length() != 1) {
+            tokens.push_back(token.substr(1, token.length() - 2));
+        } else {
+            if (inDoubleQuotes) {
+                if (token[token.length() - 1] == '\"') {
+                    tokens.back() += " " + token.substr(0, token.length() - 1);
+                    inDoubleQuotes = false;
+                } else {
+                    tokens.back() += " " + token;
+                }
+            } else {
+                if (token[0] == '\"') {
+                    tokens.push_back(token.substr(1, token.length()));
+                    inDoubleQuotes = true;
+                }
+                else{
+                    tokens.push_back(token);
+                }
+            }
         }
-        tokens.push_back(token);
     }
     return tokens;
 }
-
 
 bool endsWith(const std::string& str, const std::string& suffix) {
     if (str.length() < suffix.length()) {
@@ -52,8 +69,6 @@ void addToPath() {
             std::string newProgramPath = programDirectory;
             newProgramPath += ":";
             newProgramPath += programPath;
-            newProgramPath += ":";
-            newProgramPath += (std::string (programDirectory) + "/" + "../mycat/");
             setenv("PATH", newProgramPath.c_str(), 1);
         } else {
             std::cout << "Error getting PATH environment variable." << std::endl;
