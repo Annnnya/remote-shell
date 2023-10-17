@@ -94,10 +94,37 @@ Usage: mexit [exit code] [-h|--help]" << std::endl;
     return 1;
 }
 
-// int mecho(const std::vector<std::string>& args) {
-//     if (hasHelp(args)){
-//         std::cout << "Usage: mecho [-h|--help] [text|$<var_name>] [text|$<var_name>] [text|$<var_name>] ..." << std::endl;
-//         return 0;
-//     } 
+int mexport(const std::vector<std::string>& args){
+    if (args[0] == "mexport" && args.size() == 2) {
+        // Check if the command is "mexport" and has two more arguments
+        // The first argument is the variable name, and the second is the value
+        std::string arg = args[1];
+        size_t pos = arg.find('=');
+        if (pos != std::string::npos && pos > 0 && pos < arg.length() - 1) {
+            std::string varName = arg.substr(0, pos);
+            std::string varValue = arg.substr(pos + 1);
 
-// }
+            if (setenv(varName.c_str(), varValue.c_str(), 1) != 0) {
+                // setenv returns 0 on success, -1 on failure
+                std::cerr << "Error setting environment variable." << std::endl;
+                return 1;
+            }
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int mecho(const std::vector<std::string>& args) {
+    if (hasHelp(args)){
+        std::cout << "Usage: mecho [-h|--help] [text|$<var_name>] [text|$<var_name>] [text|$<var_name>] ..." << std::endl;
+        return 0;
+    } else {
+        for (size_t i = 1; i < args.size(); ++i) {
+            std::cout << args[i] << " ";
+        }
+        std::cout << std::endl;
+        return 0;
+    }
+    return 1;
+}

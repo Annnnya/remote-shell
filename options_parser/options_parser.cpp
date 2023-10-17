@@ -38,9 +38,3 @@ void command_line_options_t::parse(int ac, char **av) {
         throw OptionsParseException(ex.what()); // Convert to our error type
     }
 }
-
-void assert_file_exist(const std::string &f_name) {
-    if (!std::filesystem::exists(f_name)) {
-        throw std::invalid_argument("File " + f_name + " not found!");
-    }
-}

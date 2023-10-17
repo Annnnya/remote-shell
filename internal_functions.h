@@ -15,4 +15,6 @@ int mexit(const std::vector<std::string>& args);
 
 int mecho(const std::vector<std::string>& args);
 
+int mexport(const std::vector<std::string>& args);
+
 #endif

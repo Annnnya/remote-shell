@@ -126,7 +126,7 @@ int executeCommand(const std::vector<std::string>& args) {
     }
 }
 
-void parse_msh(std::string filename, std::vector<std::string> &commands){
+int parse_msh(std::string filename, std::vector<std::string> &commands){
         std::ifstream file(filename);
         if (file.is_open()) {
             std::cout << "File opened successfully" << std::endl;
@@ -137,7 +137,10 @@ void parse_msh(std::string filename, std::vector<std::string> &commands){
                     commands.push_back(line);
             }
             file.close();
+            return 0;
         }
+        std::cerr << "Error opening file " << filename << std::endl;
+        return 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -150,7 +153,9 @@ int main(int argc, char *argv[]) {
     addToPath();
 
     if (argc == 2) {
-        parse_msh(argv[1], commands);
+        int parse_code = parse_msh(argv[1], commands);
+        if (parse_code)
+            exit(parse_code);
     }
 
     while (true) {
@@ -224,8 +229,9 @@ int main(int argc, char *argv[]) {
                         lastExitCode = executeCommand(arg);
                     }
                 } else if (args[0] == ".") {
-                    script_execution = true;
-                    parse_msh(args[1], commands);
+                    if (!parse_msh(args[1], commands)){
+                        script_execution = true;
+                    }
                 } else {
                     lastExitCode = executeCommand(args);
                 }
