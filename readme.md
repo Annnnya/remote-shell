@@ -14,7 +14,7 @@ Yirii Zinchuk </mark><br>
 
 ### Compilation
 
-<mark> ./comile.sh</mark>
+<mark> cmake </mark>
 
 ### Installation
 
