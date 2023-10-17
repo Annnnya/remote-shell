@@ -10,7 +10,8 @@ Yirii Zinchuk </mark><br>
 
 ## Prerequisites
 
-<mark> GCC, CMAKE</mark>
+<mark> GCC, CMAKE, readline
+</mark>
 
 ### Compilation
 
@@ -19,6 +20,8 @@ Yirii Zinchuk </mark><br>
 ### Installation
 
 <mark> ./dependencies </mark>
+
+sudo apt-get install libreadline-dev
 
 
 ### Usage
