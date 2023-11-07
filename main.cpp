@@ -15,13 +15,26 @@
 #include "internal_functions.h"
 
 int lastExitCode;
-std::vector<std::string> tokenize(const std::string& input) {
+
+std::string is_redirect(std::string user_input) {
+    if (user_input.find(" < ") != std::string::npos) {
+        return "<";
+    } else if (user_input.find(" > ") != std::string::npos) {
+        return ">";
+    } else if (user_input.find(" &> ") != std::string::npos) {
+        return "&>";
+    } else {
+        return "";
+    }
+}
+
+std::vector<std::string> tokenize(const std::string &input) {
     std::vector<std::string> tokens;
     std::string token;
     std::istringstream tokenStream(input);
     bool inDoubleQuotes = false;
     while (std::getline(tokenStream, token, ' ')) {
-        if (token[0]=='#' && !inDoubleQuotes)
+        if (token[0] == '#' && !inDoubleQuotes)
             break;
         if (!token.empty() && token[0] == '\"' && token[token.length() - 1] == '\"' && token.length() != 1) {
             tokens.push_back(token.substr(1, token.length() - 2));
@@ -37,8 +50,7 @@ std::vector<std::string> tokenize(const std::string& input) {
                 if (token[0] == '\"') {
                     tokens.push_back(token.substr(1, token.length()));
                     inDoubleQuotes = true;
-                }
-                else{
+                } else {
                     tokens.push_back(token);
                 }
             }
@@ -47,7 +59,7 @@ std::vector<std::string> tokenize(const std::string& input) {
     return tokens;
 }
 
-bool endsWith(const std::string& str, const std::string& suffix) {
+bool endsWith(const std::string &str, const std::string &suffix) {
     if (str.length() < suffix.length()) {
         return false;  // The string is shorter than the suffix, so it can't end with it.
     }
@@ -57,7 +69,7 @@ bool endsWith(const std::string& str, const std::string& suffix) {
 }
 
 void addToPath() {
-    char* programPath = getenv("PATH");
+    char *programPath = getenv("PATH");
 
     // Retrieve the program's directory dynamically
     char programDirectory[PATH_MAX];
@@ -73,8 +85,7 @@ void addToPath() {
         } else {
             std::cout << "Error getting PATH environment variable." << std::endl;
         }
-    }
-    else {
+    } else {
         std::cout << "Error getting PATH environment variable." << std::endl;
     }
 }
@@ -111,7 +122,7 @@ std::string substituteVariables(const std::string &arg) {
     return result;
 }
 
-int executeCommand(const std::vector<std::string>& args) {
+int executeCommand(const std::vector<std::string> &args) {
     pid_t pid = fork();
     if (pid == -1) {
         std::cerr << "Fork failed." << std::endl;
@@ -141,21 +152,21 @@ int executeCommand(const std::vector<std::string>& args) {
     }
 }
 
-int parse_msh(std::string filename, std::vector<std::string> &commands){
-        std::ifstream file(filename);
-        if (file.is_open()) {
-            std::cout << "File opened successfully" << std::endl;
-            std::string line;
+int parse_msh(std::string filename, std::vector<std::string> &commands) {
+    std::ifstream file(filename);
+    if (file.is_open()) {
+        std::cout << "File opened successfully" << std::endl;
+        std::string line;
 
-            while (std::getline(file, line)) {
-                if (line[0] != '#')
-                    commands.push_back(line);
-            }
-            file.close();
-            return 0;
+        while (std::getline(file, line)) {
+            if (line[0] != '#')
+                commands.push_back(line);
         }
-        std::cerr << "Error opening file " << filename << std::endl;
-        return 1;
+        file.close();
+        return 0;
+    }
+    std::cerr << "Error opening file " << filename << std::endl;
+    return 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -176,7 +187,7 @@ int main(int argc, char *argv[]) {
     while (true) {
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            if (script_execution){
+            if (script_execution) {
                 if (counter < commands.size()) {
                     input = commands[counter];
                     counter++;
@@ -191,9 +202,9 @@ int main(int argc, char *argv[]) {
                     input = commands[counter];
                     counter++;
                 } else exit(0);
-            } else { 
+            } else {
                 std::string prompt = " " + std::string(cwd) + " $ ";
-                char* userInput = readline(prompt.c_str());
+                char *userInput = readline(prompt.c_str());
 
                 if (userInput == nullptr) {
                     break;
@@ -212,7 +223,7 @@ int main(int argc, char *argv[]) {
                     if (glob(args[i].c_str(), GLOB_NOCHECK, NULL, &glob_result) == 0) {
                         // Erase the original wildcard argument
                         args.erase(args.begin() + i);
-                        
+
                         // Iterate over the matched paths and insert them into args
                         for (size_t j = 0; j < glob_result.gl_pathc; ++j) {
                             args.insert(args.begin() + i + j, glob_result.gl_pathv[j]);
@@ -223,6 +234,62 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
+                std::string redirect_operation = is_redirect(input);
+
+
+                int initial_fd_num;
+                int saved_initial_fd;
+                if (!redirect_operation.empty()) {
+                    if (redirect_operation == ">") {
+                        std::string filename = args[args.size() - 1];
+                        args.pop_back();
+                        args.pop_back();
+                        FILE *fd = fopen(filename.c_str(), "wr+");
+                        if (fd == nullptr) {
+                            std::cerr << "Error opening file " << filename << std::endl;
+                        }
+                        int fd_num = fileno(fd);
+                        initial_fd_num = fileno(stdout);
+
+                        saved_initial_fd = dup(initial_fd_num);
+                        dup2(fd_num, initial_fd_num);
+                        fclose(fd);
+                    } else if (redirect_operation == "<") {
+                        std::string filename = args[args.size() - 1];
+                        args.pop_back();
+                        args.pop_back();
+
+                        std::string filename_contents;
+                        std::ifstream file(filename);
+                        if (file.is_open()) {
+                            std::string line;
+                            while (std::getline(file, line)) {
+                                filename_contents += line;
+                            }
+                            file.close();
+                        } else {
+                            std::cerr << "Error opening file " << filename << std::endl;
+                        }
+                        args.push_back(filename_contents);
+                    } else if (redirect_operation == "&>") {
+                        // both stdout and stderr are redirected to the same file
+                        std::string filename = args[args.size() - 1];
+                        args.pop_back();
+                        args.pop_back();
+                        FILE *fd = fopen(filename.c_str(), "wr+");
+                        if (fd == nullptr) {
+                            std::cerr << "Error opening file " << filename << std::endl;
+                        }
+                        int fd_num = fileno(fd);
+                        initial_fd_num = fileno(stdout);
+
+                        saved_initial_fd = dup(initial_fd_num);
+                        dup2(fd_num, initial_fd_num);
+                        dup2(fd_num, fileno(stderr));
+                        fclose(fd);
+                    }
+
+                }
 
                 if (args[0] == "merrno") {
                     lastExitCode = merrno(args, lastExitCode);
@@ -234,21 +301,26 @@ int main(int argc, char *argv[]) {
                     lastExitCode = mexit(args);
                 } else if (args[0] == "mecho") {
                     lastExitCode = mecho(args);
-                } else if(args[0] == "mexport"){
+                } else if (args[0] == "mexport") {
                     lastExitCode = mexport(args);
                 } else if (endsWith(args[0], ".msh")) {
-                    if (args.size()==1){
+                    if (args.size() == 1) {
                         std::vector<std::string> arg;
-                        arg.push_back("myshell");
+                        arg.emplace_back("myshell");
                         arg.push_back(args[0]);
                         lastExitCode = executeCommand(arg);
                     }
                 } else if (args[0] == ".") {
-                    if (!parse_msh(args[1], commands)){
+                    if (!parse_msh(args[1], commands)) {
                         script_execution = true;
                     }
                 } else {
                     lastExitCode = executeCommand(args);
+                }
+
+                if (!redirect_operation.empty()) {
+                    dup2(saved_initial_fd, initial_fd_num);
+                    close(saved_initial_fd);
                 }
             }
         } else {
