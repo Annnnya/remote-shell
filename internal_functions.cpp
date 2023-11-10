@@ -94,15 +94,38 @@ int mexport(const std::vector<std::string> &args) {
         const std::string &arg = args[1];
         size_t pos = arg.find('=');
         if (pos != std::string::npos && pos > 0 && pos < arg.length() - 1) {
-            std::string varName = arg.substr(0, pos);
-            std::string varValue = arg.substr(pos + 1);
+            if (arg.find("$(") == pos + 1) {
+                std::string varName = arg.substr(0, pos);
+                std::string varValue = arg.substr(pos + 3, arg.length() - pos - 4);
+                std::string command = varValue;
+                FILE *fp = popen(command.c_str(), "r");
+                if (fp == nullptr) {
+                    std::cerr << "Error executing command" << std::endl;
+                    return 1;
+                }
+                char buf[1024];
+                if (fgets(buf, 1024, fp) != nullptr) {
+                    varValue = buf;
+                    varValue.erase(varValue.length() - 1);
+                    if (setenv(varName.c_str(), varValue.c_str(), 1) != 0) {
+                        std::cerr << "Error setting environment variable." << std::endl;
+                        return 1;
+                    }
+                    return 0;
+                } else {
+                    std::cerr << "Error executing command" << std::endl;
+                    return 1;
+                }
+            } else {
+                std::string varName = arg.substr(0, pos);
+                std::string varValue = arg.substr(pos + 1);
 
-            if (setenv(varName.c_str(), varValue.c_str(), 1) != 0) {
-                // setenv returns 0 on success, -1 on failure
-                std::cerr << "Error setting environment variable." << std::endl;
-                return 1;
+                if (setenv(varName.c_str(), varValue.c_str(), 1) != 0) {
+                    std::cerr << "Error setting environment variable." << std::endl;
+                    return 1;
+                }
+                return 0;
             }
-            return 0;
         }
     }
     return 1;
@@ -120,5 +143,4 @@ int mecho(const std::vector<std::string> &args) {
         std::cout << std::endl;
         return 0;
     }
-    return 1;
 }

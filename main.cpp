@@ -162,7 +162,6 @@ int executeCommand(std::vector<std::string> &args, std::string &redirect_operati
 int parse_msh(const std::string &filename, std::vector<std::string> &commands) {
     std::ifstream file(filename);
     if (file.is_open()) {
-        std::cout << "File opened successfully" << std::endl;
         std::string line;
 
         while (std::getline(file, line)) {
@@ -177,6 +176,8 @@ int parse_msh(const std::string &filename, std::vector<std::string> &commands) {
 }
 
 int main(int argc, char *argv[]) {
+    char cwd[PATH_MAX];
+
     std::string input;
     lastExitCode = 0;
     std::vector<std::string> commands;
@@ -192,7 +193,6 @@ int main(int argc, char *argv[]) {
     }
 
     while (true) {
-        char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             if (script_execution) {
                 if (counter < commands.size()) {
