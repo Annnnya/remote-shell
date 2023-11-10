@@ -1,18 +1,14 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <cstdlib>
 #include <sstream>
-#include <cstring>
-#include <limits.h>
+#include <climits>
 #include <readline/readline.h>
-#include <readline/history.h>
 #include <glob.h>
 #include <fstream>
-#include <sys/fcntl.h>
 #include "internal_functions.h"
 #include "utils.h"
 
@@ -65,7 +61,7 @@ std::vector<std::string> tokenize(const std::string &input) {
 
 bool endsWith(const std::string &str, const std::string &suffix) {
     if (str.length() < suffix.length()) {
-        return false;  // The string is shorter than the suffix, so it can't end with it.
+        return false;
     }
 
     size_t pos = str.length() - suffix.length();
@@ -75,13 +71,11 @@ bool endsWith(const std::string &str, const std::string &suffix) {
 void addToPath() {
     char *programPath = getenv("PATH");
 
-    // Retrieve the program's directory dynamically
     char programDirectory[PATH_MAX];
     if (getcwd(programDirectory, sizeof(programDirectory)) != nullptr) {
 
-        // Add the program's directory to the PATH
         if (programPath != nullptr) {
-            programDirectory[PATH_MAX - 1] = '\0'; // Ensure the path is null-terminated
+            programDirectory[PATH_MAX - 1] = '\0';
             std::string newProgramPath = programDirectory;
             newProgramPath += ":";
             newProgramPath += programPath;
@@ -100,7 +94,6 @@ std::string substituteVariables(const std::string &arg) {
     size_t pos = 0;
     while (pos < arg.length()) {
         if (arg[pos] == '$') {
-            // Check if it's a valid variable reference
             if (pos + 1 < arg.length() && isalnum(arg[pos + 1])) {
                 size_t end = pos + 1;
                 while (end < arg.length() && (isalnum(arg[end]) || arg[end] == '_')) {
@@ -113,12 +106,10 @@ std::string substituteVariables(const std::string &arg) {
                 }
                 pos = end;
             } else {
-                // If not a valid variable reference, treat '$' as a regular character
                 result += arg[pos];
                 pos++;
             }
         } else {
-            // If not a '$', add the character to the result
             result += arg[pos];
             pos++;
         }
@@ -138,8 +129,8 @@ int executeCommand(std::vector<std::string> &args, std::string &redirect_operati
         for (const std::string &arg: args) {
             substitutedArgs.push_back(substituteVariables(arg));
         }
-        // Convert vector of strings to array of C-style strings
         std::vector<char *> c_args;
+        c_args.reserve(substitutedArgs.size());
         for (const std::string &arg: substitutedArgs) {
             c_args.push_back(const_cast<char *>(arg.c_str()));
         }
@@ -158,7 +149,7 @@ int executeCommand(std::vector<std::string> &args, std::string &redirect_operati
     }
 }
 
-int parse_msh(std::string filename, std::vector<std::string> &commands) {
+int parse_msh(const std::string &filename, std::vector<std::string> &commands) {
     std::ifstream file(filename);
     if (file.is_open()) {
         std::cout << "File opened successfully" << std::endl;
@@ -192,7 +183,7 @@ int main(int argc, char *argv[]) {
 
     while (true) {
         char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             if (script_execution) {
                 if (counter < commands.size()) {
                     input = commands[counter];
@@ -226,16 +217,14 @@ int main(int argc, char *argv[]) {
 
                 for (size_t i = 0; i < args.size(); ++i) {
                     glob_t glob_result;
-                    if (glob(args[i].c_str(), GLOB_NOCHECK, NULL, &glob_result) == 0) {
-                        // Erase the original wildcard argument
+                    if (glob(args[i].c_str(), GLOB_NOCHECK, nullptr, &glob_result) == 0) {
                         args.erase(args.begin() + i);
 
-                        // Iterate over the matched paths and insert them into args
                         for (size_t j = 0; j < glob_result.gl_pathc; ++j) {
                             args.insert(args.begin() + i + j, glob_result.gl_pathv[j]);
                         }
 
-                        i += glob_result.gl_pathc - 1;  // Adjust the loop index
+                        i += glob_result.gl_pathc - 1;
                         globfree(&glob_result);
                     }
                 }

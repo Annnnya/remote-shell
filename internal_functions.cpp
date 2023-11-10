@@ -3,9 +3,8 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <string>
-#include <getopt.h>
 #include <sys/stat.h>
-#include <limits.h>
+#include <climits>
 
 
 bool hasHelp(const std::vector<std::string> &args) {
@@ -35,7 +34,7 @@ int mpwd(const std::vector<std::string> &args) {
         return 0;
     } else if (args.size() == 1) {
         char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             std::cout << cwd << std::endl;
             return 0;
         } else {
@@ -52,7 +51,7 @@ int mcd(const std::vector<std::string> &args) {
         std::cout << "Change current path\nUsage: mcd <path> [-h|--help]" << std::endl;
         return 0;
     } else if (args.size() == 2) {
-        struct stat path_stat;
+        struct stat path_stat{};
         if (stat(args[1].c_str(), &path_stat) == 0) {
             if (S_ISDIR(path_stat.st_mode)) {
                 if (chdir(args[1].c_str()) == 0) {
@@ -70,7 +69,7 @@ int mcd(const std::vector<std::string> &args) {
 
 int mexit(const std::vector<std::string> &args) {
     if (args.size() == 2 && hasHelp(args)) {
-        std::cout << "Exith myshell\nUsage: mexit [exit code] [-h|--help]" << std::endl;
+        std::cout << "Exit myshell\nUsage: mexit [exit code] [-h|--help]" << std::endl;
         return 0;
     } else if (args.size() == 2) {
         try {
@@ -92,9 +91,7 @@ int mexit(const std::vector<std::string> &args) {
 
 int mexport(const std::vector<std::string> &args) {
     if (args[0] == "mexport" && args.size() == 2) {
-        // Check if the command is "mexport" and has two more arguments
-        // The first argument is the variable name, and the second is the value
-        std::string arg = args[1];
+        const std::string &arg = args[1];
         size_t pos = arg.find('=');
         if (pos != std::string::npos && pos > 0 && pos < arg.length() - 1) {
             std::string varName = arg.substr(0, pos);

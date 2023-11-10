@@ -12,6 +12,6 @@
 #include <unistd.h>
 #include <sys/fcntl.h>
 
-void substitute_descriptors(std::string& operation, std::vector<std::string>& args);
+void substitute_descriptors(std::string &operation, std::vector<std::string> &args);
 
 #endif //MYSHELL_UTILS_H

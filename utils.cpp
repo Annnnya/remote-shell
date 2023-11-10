@@ -4,7 +4,7 @@
 
 #include "utils.h"
 
-void substitute_descriptors(std::string& redirect_operation, std::vector<std::string>& args) {
+void substitute_descriptors(std::string &redirect_operation, std::vector<std::string> &args) {
     if (redirect_operation == ">") {
         int fd = open(args[args.size() - 1].c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (fd == -1) {
