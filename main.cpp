@@ -117,13 +117,18 @@ std::string substituteVariables(const std::string &arg) {
     return result;
 }
 
-int executeCommand(std::vector<std::string> &args, std::string &redirect_operation) {
+int executeCommand(std::vector<std::string> &args, std::string &redirect_operation, bool background) {
     pid_t pid = fork();
     if (pid == -1) {
         std::cerr << "Fork failed." << std::endl;
         return -1;
     } else if (pid == 0) {
         substitute_descriptors(redirect_operation, args);
+        if (background && redirect_operation.empty()) {
+            close(STDIN_FILENO);
+            close(STDOUT_FILENO);
+            close(STDERR_FILENO);
+        }
         std::vector<std::string> substitutedArgs;
         substitutedArgs.reserve(args.size());
         for (const std::string &arg: args) {
@@ -141,12 +146,17 @@ int executeCommand(std::vector<std::string> &args, std::string &redirect_operati
         std::cerr << "Command not found: " << args[0] << std::endl;
         exit(EXIT_FAILURE);
     } else {
-        lastExitCode = waitpid(pid, &lastExitCode, 0);
-        if (WIFEXITED(lastExitCode)) {
-            return WEXITSTATUS(lastExitCode);
+        if (!background) {
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status)) {
+                return WEXITSTATUS(status);
+            }
+            return -1;
         }
-        return -1;
+        signal(SIGCHLD, SIG_IGN);
     }
+    return 0;
 }
 
 int parse_msh(const std::string &filename, std::vector<std::string> &commands) {
@@ -229,6 +239,9 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
+                bool background = args.back() == "&";
+                if (background) args.pop_back();
+
                 std::string redirect_operation = is_redirect(input);
                 int default_stdout = dup(STDOUT_FILENO);
                 int default_stdin = dup(STDIN_FILENO);
@@ -258,7 +271,7 @@ int main(int argc, char *argv[]) {
                         std::vector<std::string> arg;
                         arg.emplace_back("myshell");
                         arg.push_back(args[0]);
-                        lastExitCode = executeCommand(arg, redirect_operation);
+                        lastExitCode = executeCommand(arg, redirect_operation, background);
                     }
                 } else if (args[0] == ".") {
                     substitute_descriptors(redirect_operation, args);
@@ -266,12 +279,15 @@ int main(int argc, char *argv[]) {
                         script_execution = true;
                     }
                 } else {
-                    lastExitCode = executeCommand(args, redirect_operation);
+                    lastExitCode = executeCommand(args, redirect_operation, background);
                 }
 
                 dup2(default_stdout, STDOUT_FILENO);
+                close(default_stdout);
                 dup2(default_stdin, STDIN_FILENO);
+                close(default_stdin);
                 dup2(default_stderr, STDERR_FILENO);
+                close(default_stderr);
             }
         } else {
             std::cerr << "Error getting current working directory" << std::endl;
