@@ -223,7 +223,10 @@ int main(int argc, char *argv[]) {
 
             if (!input.empty()) {
                 add_history(input.c_str());
-                std::vector<std::string> args = tokenize(input);
+                std::vector<std::string> args;
+                for (const std::string &arg: tokenize(input)) {
+                    args.push_back(substituteVariables(arg));
+                }
 
                 for (size_t i = 0; i < args.size(); ++i) {
                     glob_t glob_result;
