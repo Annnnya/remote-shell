@@ -56,7 +56,9 @@ include(cmake/CompilerWarnings.cmake)
 
 #! Project main executable source compilation
 add_executable(${PROJECT_NAME} main.cpp
-				internal_functions.h internal_functions.cpp)
+				internal_functions.h internal_functions.cpp
+		utils.h
+		utils.cpp)
 
 add_executable(mycat ./mycat/main.cpp
 				./options_parser/options_parser.h ./options_parser/options_parser.cpp)

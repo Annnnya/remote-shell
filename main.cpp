@@ -12,13 +12,17 @@
 #include <readline/history.h>
 #include <glob.h>
 #include <fstream>
+#include <sys/fcntl.h>
 #include "internal_functions.h"
+#include "utils.h"
 
 int lastExitCode;
 
-std::string is_redirect(std::string user_input) {
+std::string is_redirect(const std::string &user_input) {
     if (user_input.find(" < ") != std::string::npos) {
         return "<";
+    } else if (user_input.find(" 2>&1") != std::string::npos && user_input.find(" > ") != std::string::npos) {
+        return "2>&1";
     } else if (user_input.find(" > ") != std::string::npos) {
         return ">";
     } else if (user_input.find(" &> ") != std::string::npos) {
@@ -122,13 +126,15 @@ std::string substituteVariables(const std::string &arg) {
     return result;
 }
 
-int executeCommand(const std::vector<std::string> &args) {
+int executeCommand(std::vector<std::string> &args, std::string &redirect_operation) {
     pid_t pid = fork();
     if (pid == -1) {
         std::cerr << "Fork failed." << std::endl;
         return -1;
     } else if (pid == 0) {
+        substitute_descriptors(redirect_operation, args);
         std::vector<std::string> substitutedArgs;
+        substitutedArgs.reserve(args.size());
         for (const std::string &arg: args) {
             substitutedArgs.push_back(substituteVariables(arg));
         }
@@ -235,93 +241,48 @@ int main(int argc, char *argv[]) {
                 }
 
                 std::string redirect_operation = is_redirect(input);
-
-
-                int initial_fd_num;
-                int saved_initial_fd;
-                if (!redirect_operation.empty()) {
-                    if (redirect_operation == ">") {
-                        std::string filename = args[args.size() - 1];
-                        args.pop_back();
-                        args.pop_back();
-                        FILE *fd = fopen(filename.c_str(), "wr+");
-                        if (fd == nullptr) {
-                            std::cerr << "Error opening file " << filename << std::endl;
-                        }
-                        int fd_num = fileno(fd);
-                        initial_fd_num = fileno(stdout);
-
-                        saved_initial_fd = dup(initial_fd_num);
-                        dup2(fd_num, initial_fd_num);
-                        fclose(fd);
-                    } else if (redirect_operation == "<") {
-                        std::string filename = args[args.size() - 1];
-                        args.pop_back();
-                        args.pop_back();
-
-                        std::string filename_contents;
-                        std::ifstream file(filename);
-                        if (file.is_open()) {
-                            std::string line;
-                            while (std::getline(file, line)) {
-                                filename_contents += line;
-                            }
-                            file.close();
-                        } else {
-                            std::cerr << "Error opening file " << filename << std::endl;
-                        }
-                        args.push_back(filename_contents);
-                    } else if (redirect_operation == "&>") {
-                        // both stdout and stderr are redirected to the same file
-                        std::string filename = args[args.size() - 1];
-                        args.pop_back();
-                        args.pop_back();
-                        FILE *fd = fopen(filename.c_str(), "wr+");
-                        if (fd == nullptr) {
-                            std::cerr << "Error opening file " << filename << std::endl;
-                        }
-                        int fd_num = fileno(fd);
-                        initial_fd_num = fileno(stdout);
-
-                        saved_initial_fd = dup(initial_fd_num);
-                        dup2(fd_num, initial_fd_num);
-                        dup2(fd_num, fileno(stderr));
-                        fclose(fd);
-                    }
-
-                }
+                int default_stdout = dup(STDOUT_FILENO);
+                int default_stdin = dup(STDIN_FILENO);
+                int default_stderr = dup(STDERR_FILENO);
 
                 if (args[0] == "merrno") {
+                    substitute_descriptors(redirect_operation, args);
                     lastExitCode = merrno(args, lastExitCode);
                 } else if (args[0] == "mpwd") {
+                    substitute_descriptors(redirect_operation, args);
                     lastExitCode = mpwd(args);
                 } else if (args[0] == "mcd") {
+                    substitute_descriptors(redirect_operation, args);
                     lastExitCode = mcd(args);
                 } else if (args[0] == "mexit") {
+                    substitute_descriptors(redirect_operation, args);
                     lastExitCode = mexit(args);
                 } else if (args[0] == "mecho") {
+                    substitute_descriptors(redirect_operation, args);
                     lastExitCode = mecho(args);
                 } else if (args[0] == "mexport") {
+                    substitute_descriptors(redirect_operation, args);
                     lastExitCode = mexport(args);
                 } else if (endsWith(args[0], ".msh")) {
+                    substitute_descriptors(redirect_operation, args);
                     if (args.size() == 1) {
                         std::vector<std::string> arg;
                         arg.emplace_back("myshell");
                         arg.push_back(args[0]);
-                        lastExitCode = executeCommand(arg);
+                        lastExitCode = executeCommand(arg, redirect_operation);
                     }
                 } else if (args[0] == ".") {
+                    substitute_descriptors(redirect_operation, args);
                     if (!parse_msh(args[1], commands)) {
                         script_execution = true;
                     }
                 } else {
-                    lastExitCode = executeCommand(args);
+                    lastExitCode = executeCommand(args, redirect_operation);
                 }
 
-                if (!redirect_operation.empty()) {
-                    dup2(saved_initial_fd, initial_fd_num);
-                    close(saved_initial_fd);
-                }
+                dup2(default_stdout, STDOUT_FILENO);
+                dup2(default_stdin, STDIN_FILENO);
+                dup2(default_stderr, STDERR_FILENO);
             }
         } else {
             std::cerr << "Error getting current working directory" << std::endl;
