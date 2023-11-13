@@ -31,5 +31,8 @@ int executeCommand(std::vector<std::string> &args, std::string &redirect_operati
 
 int parse_msh(const std::string &filename, std::vector<std::string> &commands);
 
+bool containsPipeline(const std::string& input);
+
+std::vector<std::string> splitBySubstring(const std::string &input, const std::string &substring);
 
 #endif

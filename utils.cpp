@@ -162,6 +162,26 @@ int parse_msh(const std::string &filename, std::vector<std::string> &commands) {
     return 1;
 }
 
+bool containsPipeline(const std::string& input) {
+    return input.find(" | ") != std::string::npos;
+}
+
+std::vector<std::string> splitBySubstring(const std::string &input, const std::string &substring) {
+    std::vector<std::string> result;
+
+    size_t startPos = 0;
+    size_t foundPos = input.find(substring);
+
+    while (foundPos != std::string::npos) {
+        result.push_back(input.substr(startPos, foundPos - startPos));
+        startPos = foundPos + substring.length();
+        foundPos = input.find(substring, startPos);
+    }
+
+    result.push_back(input.substr(startPos));
+    return result;
+}
+
 void substitute_descriptors(std::string &redirect_operation, std::vector<std::string> &args) {
     if (redirect_operation == ">") {
         int fd = open(args[args.size() - 1].c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
