@@ -15,6 +15,7 @@
 #include <climits>
 #include <fstream>
 #include <glob.h>
+#include <arpa/inet.h>
 
 extern int lastExitCode;
 
@@ -45,5 +46,11 @@ void processInput(std::vector<std::string> &args, std::string &input);
 int parseAndExecuteInput(std::string &input, std::vector<std::string> &commands, bool &script_execution);
 
 void executePipe(std::string input, std::vector<std::string> &commands, bool &script_execution);
+
+std::string getCurrentTimeFormatted();
+
+void SafeWriteLog(const std::string& message, std::string who, int logFileDescriptor);
+
+std::string getSocketAddressString(const sockaddr_in& addr);
 
 #endif

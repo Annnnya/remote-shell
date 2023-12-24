@@ -15,7 +15,7 @@
 
 int lastExitCode;
 
-void handleClient(int clientSocket) {
+void handleClient(int clientSocket, int logFileDescriptor, sockaddr_in clientAddress) {
     //to implement client logic here
     char buffer[1024];
     int bytesRead;
@@ -39,45 +39,47 @@ void handleClient(int clientSocket) {
     }
 
     while ((bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
+
         buffer[bytesRead] = '\0';
+        input = buffer;
+        while (!input.empty() && std::isspace(input.back())) {
+            input.pop_back();
+        }
+        SafeWriteLog(input, getSocketAddressString(clientAddress), logFileDescriptor);
+
+        // main executing code here
+        if (!input.empty()) {
+            add_history(input.c_str());
+            if (containsPipeline(input)) {
+                executePipe(input, commands, script_execution);
+            } else {
+                parseAndExecuteInput(input, commands, script_execution);
+            }
+        }
 
         if (script_execution) {
-            if (counter < commands.size()) {
+            while (counter < commands.size()) {
                 input = commands[counter];
                 counter++;
-            } else {
-                counter = 0;
-                commands.clear();
-                script_execution = false;
-                input = "";
+                add_history(input.c_str());
+                if (containsPipeline(input)) {
+                    executePipe(input, commands, script_execution);
+                } else {
+                    parseAndExecuteInput(input, commands, script_execution);
+                }
             }
-        } else {
-            input = buffer;
-            while (!input.empty() && std::isspace(input.back())) {
-                input.pop_back();
-            }
+            counter = 0;
+            commands.clear();
+            script_execution = false;
+            input = "";
         }
 
-    // main executing code here
-    if (!input.empty()) {
-        add_history(input.c_str());
-        if (containsPipeline(input)) {
-            executePipe(input, commands, script_execution);
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+            std::string prompt = " " + std::string(cwd) + " $ ";
+            std::cout << prompt << std::flush;
         } else {
-            parseAndExecuteInput(input, commands, script_execution);
-        }
-    } else {
             std::cerr << "Error getting current working directory" << std::endl;
-            break;
         }
-
-    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-        std::string prompt = " " + std::string(cwd) + " $ ";
-        std::cout << prompt << std::flush;
-    } else {
-        std::cerr << "Error getting current working directory" << std::endl;
-    }
-
     }
 
     close(clientSocket);
@@ -130,6 +132,13 @@ int main(int argc, char *argv[]) {
         }
         std::cout << "Server listening on port " << port << std::endl;
 
+        int logFileDescriptor = open("logs.txt", O_WRONLY | O_APPEND | O_CREAT, 0644);
+        if (logFileDescriptor == -1) {
+            std::cerr << "Error opening file\n";
+            close(serverSocket);
+            return -1;
+        }
+
 
         while (true) {
             //handling clients
@@ -142,15 +151,18 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            std::cout << "Connection accepted from " << inet_ntoa(clientAddress.sin_addr) << std::endl;
-
+            std::string message = "Connection accepted from " + getSocketAddressString(clientAddress);
+            std::cout << message << std::endl;
+            SafeWriteLog(message, "Server", logFileDescriptor);
+          
             pid_t pid = fork();
 
             if (pid == 0) {
                 // Child process - continues working with client
                 close(serverSocket);;
-                handleClient(clientSocket);
+                handleClient(clientSocket, logFileDescriptor, clientAddress);
                 std::cout << "Connection with "<< inet_ntoa(clientAddress.sin_addr) << " ended." << std::endl;
+                SafeWriteLog("Connection ended", getSocketAddressString(clientAddress), logFileDescriptor);
                 exit(0);
             } else if (pid > 0) {
                 // Parent process - continues listening for new clients

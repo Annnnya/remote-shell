@@ -1,6 +1,10 @@
 #include "utils.h"
 #include <string.h>
 #include <getopt.h>
+#include <chrono>
+#include <iomanip>
+#include <ctime>
+#include <sys/file.h> 
 #include "internal_functions.h"
 
 
@@ -386,4 +390,37 @@ void executePipe(std::string input, std::vector<std::string> &commands, bool &sc
     }
 }
 
+
+std::string getCurrentTimeFormatted() {
+    auto currentTime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+    std::tm* localTime = std::localtime(&currentTime);
+
+    std::ostringstream oss;
+    oss << std::put_time(localTime, "%Y-%m-%d %H:%M:%S");
+
+    return oss.str();
+}
+
+void SafeWriteLog(const std::string& message, std::string who, int logFileDescriptor) {
+    std::string time = getCurrentTimeFormatted();
+    std::string logMessage = "[" + time + "] @" + who + " : " + message + "\n";
+    if (flock(logFileDescriptor, LOCK_EX) == 0) {
+        write(logFileDescriptor, logMessage.c_str(), logMessage.length());
+        flock(logFileDescriptor, LOCK_UN);
+    } else {
+        std::cerr << "Error locking log file." << std::endl;
+    }
+}
+
+std::string getSocketAddressString(const sockaddr_in& addr) {
+    char ipStr[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &(addr.sin_addr), ipStr, INET_ADDRSTRLEN) == nullptr) {
+        std::cerr << "Error converting IP address to string.\n";
+        return "";
+    }
+
+    uint16_t port = ntohs(addr.sin_port);
+    return std::string(ipStr) + ":" + std::to_string(port);
+}
 
