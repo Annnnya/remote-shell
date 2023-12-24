@@ -8,92 +8,18 @@
 #include <climits>
 #include <readline/readline.h>
 #include <readline/history.h>
-#include <glob.h>
 #include <fstream>
 #include "internal_functions.h"
 #include "utils.h"
+#include <arpa/inet.h>
 
 int lastExitCode;
 
-void processInput(std::vector<std::string> &args, std::string &input){
-    for (const std::string &arg: tokenize(input)) {
-        args.push_back(substituteVariables(arg));
-    }
+void handleClient(int clientSocket) {
+    //to implement client logic here
+    char buffer[1024];
+    int bytesRead;
 
-    for (size_t i = 0; i < args.size(); ++i) {
-        glob_t glob_result;
-        if (glob(args[i].c_str(), GLOB_NOCHECK, nullptr, &glob_result) == 0) {
-            args.erase(args.begin() + i);
-
-            for (size_t j = 0; j < glob_result.gl_pathc; ++j) {
-                args.insert(args.begin() + i + j, glob_result.gl_pathv[j]);
-            }
-
-            i += glob_result.gl_pathc - 1;
-            globfree(&glob_result);
-        }
-    }
-}
-
-int parseAndExecuteInput(std::string &input, std::vector<std::string> &commands, bool &script_execution){
-    std::vector<std::string> args;
-    processInput(args, input);
-
-    bool background = args.back() == "&";
-    if (background) args.pop_back();
-
-    std::string redirect_operation = is_redirect(input);
-    int default_stdout = dup(STDOUT_FILENO);
-    int default_stdin = dup(STDIN_FILENO);
-    int default_stderr = dup(STDERR_FILENO);
-
-    if (args[0] == "merrno") {
-        substitute_descriptors(redirect_operation, args);
-        lastExitCode = merrno(args, lastExitCode);
-    } else if (args[0] == "mpwd") {
-        substitute_descriptors(redirect_operation, args);
-        lastExitCode = mpwd(args);
-    } else if (args[0] == "mcd") {
-        substitute_descriptors(redirect_operation, args);
-        lastExitCode = mcd(args);
-    } else if (args[0] == "mexit") {
-        substitute_descriptors(redirect_operation, args);
-        lastExitCode = mexit(args);
-    } else if (args[0] == "mecho") {
-        substitute_descriptors(redirect_operation, args);
-        lastExitCode = mecho(args);
-    } else if (args[0] == "mexport") {
-        substitute_descriptors(redirect_operation, args);
-        lastExitCode = mexport(args);
-    } else if (endsWith(args[0], ".msh")) {
-        substitute_descriptors(redirect_operation, args);
-        if (args.size() == 1) {
-            std::vector<std::string> arg;
-            arg.emplace_back("myshell");
-            arg.push_back(args[0]);
-            lastExitCode = executeCommand(arg, redirect_operation, background);
-        }
-    } else if (args[0] == ".") {
-        substitute_descriptors(redirect_operation, args);
-        if (!parse_msh(args[1], commands)) {
-            script_execution = true;
-        }
-    } else {
-        lastExitCode = executeCommand(args, redirect_operation, background);
-    }
-
-    dup2(default_stdout, STDOUT_FILENO);
-    close(default_stdout);
-    dup2(default_stdin, STDIN_FILENO);
-    close(default_stdin);
-    dup2(default_stderr, STDERR_FILENO);
-    close(default_stderr);
-
-    return 0;
-}
-
-
-int main(int argc, char *argv[]) {
     char cwd[PATH_MAX];
 
     std::string input;
@@ -102,15 +28,152 @@ int main(int argc, char *argv[]) {
     size_t counter = 0;
     bool script_execution = false;
 
-    addToPath();
+    dup2(clientSocket, STDOUT_FILENO);
+    dup2(clientSocket, STDERR_FILENO);
 
-    if (argc == 2) {
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        std::string prompt = " " + std::string(cwd) + " $ ";
+        std::cout << prompt << std::flush;
+    } else {
+        std::cerr << "Error getting current working directory" << std::endl;
+    }
+
+    while ((bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
+        buffer[bytesRead] = '\0';
+
+        if (script_execution) {
+            if (counter < commands.size()) {
+                input = commands[counter];
+                counter++;
+            } else {
+                counter = 0;
+                commands.clear();
+                script_execution = false;
+                input = "";
+            }
+        } else {
+            input = buffer;
+            while (!input.empty() && std::isspace(input.back())) {
+                input.pop_back();
+            }
+        }
+
+    // main executing code here
+    if (!input.empty()) {
+        add_history(input.c_str());
+        if (containsPipeline(input)) {
+            executePipe(input, commands, script_execution);
+        } else {
+            parseAndExecuteInput(input, commands, script_execution);
+        }
+    } else {
+            std::cerr << "Error getting current working directory" << std::endl;
+            break;
+        }
+
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        std::string prompt = " " + std::string(cwd) + " $ ";
+        std::cout << prompt << std::flush;
+    } else {
+        std::cerr << "Error getting current working directory" << std::endl;
+    }
+
+    }
+
+    close(clientSocket);
+}
+
+
+int main(int argc, char *argv[]) {
+
+    addToPath();
+    std::vector<std::string> commands;
+
+    int port;
+    bool isServer = parseArguments(argc, argv, port);
+
+    if (argc == 2 && !isServer) {
         int parse_code = parse_msh(argv[1], commands);
         if (parse_code)
             exit(parse_code);
+    } else if (!isServer && argc > 1) {
+        std::cerr << "Wrong arguments" << std::endl;
+        exit(1);
     }
 
+
+
+    //establish connection and accept clients
+    if (isServer){
+
+        int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+        if (serverSocket == -1) {
+            std::cerr << "Error creating socket\n";
+            return -1;
+        }
+
+        sockaddr_in serverAddress;
+        serverAddress.sin_family = AF_INET;
+        serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+        serverAddress.sin_port = htons(port);
+
+        if (bind(serverSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == -1) {
+            std::cerr << "Error binding socket\n";
+            close(serverSocket);
+            return -1;
+        }
+
+        if (listen(serverSocket, 10) == -1) {
+            std::cerr << "Error listening socket\n";
+            close(serverSocket);
+            return -1;
+        }
+        std::cout << "Server listening on port " << port << std::endl;
+
+
+        while (true) {
+            //handling clients
+            sockaddr_in clientAddress;
+            socklen_t clientAddressLen = sizeof(clientAddress);
+
+            int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddress, &clientAddressLen);
+            if (clientSocket == -1) {
+                std::cerr << "Error accepting connection\n";
+                continue;
+            }
+
+            std::cout << "Connection accepted from " << inet_ntoa(clientAddress.sin_addr) << std::endl;
+
+            pid_t pid = fork();
+
+            if (pid == 0) {
+                // Child process - continues working with client
+                close(serverSocket);;
+                handleClient(clientSocket);
+                std::cout << "Connection with "<< inet_ntoa(clientAddress.sin_addr) << " ended." << std::endl;
+                exit(0);
+            } else if (pid > 0) {
+                // Parent process - continues listening for new clients
+                close(clientSocket);
+            } else {
+                std::cerr << "Error forking process\n";
+                close(clientSocket);
+            }
+        }
+
+        close(serverSocket);
+    }
+
+
+    char cwd[PATH_MAX];
+
+    std::string input;
+    lastExitCode = 0;
+    size_t counter = 0;
+    bool script_execution = false;
+
     while (true) {
+        // get current working directory and input from user/file
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             if (script_execution) {
                 if (counter < commands.size()) {
@@ -122,7 +185,7 @@ int main(int argc, char *argv[]) {
                     script_execution = false;
                     input = "";
                 }
-            } else if (argc == 2) {
+            } else if (argc == 2 && !isServer) {
                 if (counter < commands.size()) {
                     input = commands[counter];
                     counter++;
@@ -139,63 +202,11 @@ int main(int argc, char *argv[]) {
                 free(userInput);
             }
 
-        // main executiong code here
+        // main executing code here
         if (!input.empty()) {
             add_history(input.c_str());
             if (containsPipeline(input)) {
-                std::vector<std::string> pipeline_commands = splitBySubstring(input, " | ");
-                int num_pipes = pipeline_commands.size() - 1;
-
-                std::vector<std::vector<int>> pipes(num_pipes, std::vector<int>(2, 0));
-                for (int i = 0; i < num_pipes; ++i) {
-                    if (pipe(pipes[i].data()) == -1) {
-                        std::cerr << "Error creating pipe." << std::endl;
-                        exit(EXIT_FAILURE);
-                    }
-                }
-
-                for (int i = 0; i <= num_pipes; ++i) {
-                    std::string command = pipeline_commands[i];
-                    std::vector<std::string> args;
-                    processInput(args, command);
-
-                    pid_t pid = fork();
-                    if (pid == -1) {
-                        std::cerr << "Fork failed." << std::endl;
-                        exit(EXIT_FAILURE);
-                    } else if (pid == 0) {
-                        if (i != 0) {
-                            dup2(pipes[i - 1][0], STDIN_FILENO);
-                            close(pipes[i - 1][0]);
-                            close(pipes[i - 1][1]);
-                        }
-                        if (i != num_pipes) {
-                            dup2(pipes[i][1], STDOUT_FILENO);
-                            close(pipes[i][0]);
-                            close(pipes[i][1]);
-                        }
-                        for (int j = 0; j < num_pipes; ++j) {
-                            close(pipes[j][0]);
-                            close(pipes[j][1]);
-                        }
-                        parseAndExecuteInput(command, commands, script_execution);
-                        exit(EXIT_SUCCESS);
-                    }
-                }
-
-                for (int i = 0; i < num_pipes; ++i) {
-                    close(pipes[i][0]);
-                    close(pipes[i][1]);
-                }
-
-                for (int i = 0; i <= num_pipes; ++i) {
-                    int status;
-                    wait(&status);
-                    if (WIFEXITED(status)) {
-                        lastExitCode = WEXITSTATUS(status);
-                    }
-                }
-
+                executePipe(input, commands, script_execution);
             } else {
                 parseAndExecuteInput(input, commands, script_execution);
             }

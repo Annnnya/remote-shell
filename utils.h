@@ -14,6 +14,9 @@
 #include <cstdlib>
 #include <climits>
 #include <fstream>
+#include <glob.h>
+
+extern int lastExitCode;
 
 void substitute_descriptors(std::string &operation, std::vector<std::string> &args);
 
@@ -34,5 +37,13 @@ int parse_msh(const std::string &filename, std::vector<std::string> &commands);
 bool containsPipeline(const std::string& input);
 
 std::vector<std::string> splitBySubstring(const std::string &input, const std::string &substring);
+
+bool parseArguments(int argc, char* argv[], int& port);
+
+void processInput(std::vector<std::string> &args, std::string &input);
+
+int parseAndExecuteInput(std::string &input, std::vector<std::string> &commands, bool &script_execution);
+
+void executePipe(std::string input, std::vector<std::string> &commands, bool &script_execution);
 
 #endif

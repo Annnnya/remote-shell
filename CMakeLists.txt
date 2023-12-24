@@ -44,7 +44,7 @@ set(ENABLE_MSAN OFF)
 
 #! Be default -- build release version if not specified otherwise.
 if (NOT CMAKE_BUILD_TYPE)
-	set(CMAKE_BUILD_TYPE Release)
+	set(CMAKE_BUILD_TYPE Debug)
 endif ()
 
 # Warnings as errors should be imported here -- do not move this line
