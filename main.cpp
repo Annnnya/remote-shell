@@ -12,10 +12,12 @@
 #include "internal_functions.h"
 #include "utils.h"
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 int lastExitCode;
 
-void handleClient(int clientSocket, int logFileDescriptor, sockaddr_in clientAddress) {
+void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in clientAddress) {
     //to implement client logic here
     char buffer[1024];
     int bytesRead;
@@ -28,8 +30,8 @@ void handleClient(int clientSocket, int logFileDescriptor, sockaddr_in clientAdd
     size_t counter = 0;
     bool script_execution = false;
 
-    dup2(clientSocket, STDOUT_FILENO);
-    dup2(clientSocket, STDERR_FILENO);
+    dup2(SSL_get_fd(ssl), STDOUT_FILENO);
+    dup2(SSL_get_fd(ssl), STDERR_FILENO);
 
     if (getcwd(cwd, sizeof(cwd)) != nullptr) {
         std::string prompt = " " + std::string(cwd) + " $ ";
@@ -38,7 +40,7 @@ void handleClient(int clientSocket, int logFileDescriptor, sockaddr_in clientAdd
         std::cerr << "Error getting current working directory" << std::endl;
     }
 
-    while ((bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
+    while ((bytesRead = read(clientSocket, buffer, sizeof(buffer))) > 0) {
 
         buffer[bytesRead] = '\0';
         input = buffer;
@@ -81,9 +83,42 @@ void handleClient(int clientSocket, int logFileDescriptor, sockaddr_in clientAdd
             std::cerr << "Error getting current working directory" << std::endl;
         }
     }
-
-    close(clientSocket);
 }
+
+
+
+
+SSL_CTX *create_context()
+{
+    const SSL_METHOD *method;
+    SSL_CTX *ctx;
+
+    method = TLS_server_method();
+
+    ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        perror("Unable to create SSL context");
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    return ctx;
+}
+
+void configure_context(SSL_CTX *ctx)
+{
+    /* Set the key and cert */
+    if (SSL_CTX_use_certificate_file(ctx, "../tsl_keys/cert.pem", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, "../tsl_keys/key.pem", SSL_FILETYPE_PEM) <= 0 ) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+}
+
 
 
 int main(int argc, char *argv[]) {
@@ -139,11 +174,21 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
+        int sock;
+        SSL_CTX *ctx;
+
+        /* Ignore broken pipe signals */
+        signal(SIGPIPE, SIG_IGN);
+
+        ctx = create_context();
+
+        configure_context(ctx);
 
         while (true) {
             //handling clients
             sockaddr_in clientAddress;
             socklen_t clientAddressLen = sizeof(clientAddress);
+            SSL *ssl;
 
             int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddress, &clientAddressLen);
             if (clientSocket == -1) {
@@ -159,9 +204,25 @@ int main(int argc, char *argv[]) {
 
             if (pid == 0) {
                 // Child process - continues working with client
-                close(serverSocket);;
-                handleClient(clientSocket, logFileDescriptor, clientAddress);
-                std::cout << "Connection with "<< inet_ntoa(clientAddress.sin_addr) << " ended." << std::endl;
+                close(serverSocket);
+                int original_stdout = dup(STDOUT_FILENO);
+                int original_stderr = dup(STDERR_FILENO);
+
+                ssl = SSL_new(ctx);
+                SSL_set_fd(ssl, clientSocket);
+                handleClient(ssl, clientSocket, logFileDescriptor, clientAddress);
+
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+                close(clientSocket);
+
+                dup2(original_stdout, STDOUT_FILENO);
+                dup2(original_stderr, STDERR_FILENO);
+
+                close(original_stdout);
+                close(original_stderr);
+
+                std::cout << "Connection with "<< getSocketAddressString(clientAddress) << " ended." << std::endl;
                 SafeWriteLog("Connection ended", getSocketAddressString(clientAddress), logFileDescriptor);
                 exit(0);
             } else if (pid > 0) {

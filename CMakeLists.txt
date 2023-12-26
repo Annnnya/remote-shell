@@ -75,6 +75,9 @@ target_link_libraries(${PROJECT_NAME} Boost::program_options Boost::system)
 target_include_directories(mycat PRIVATE ${Boost_INCLUDE_DIR})
 target_link_libraries(mycat Boost::program_options Boost::system)
 
+find_package(OpenSSL REQUIRED)
+target_link_libraries(${PROJECT_NAME} OpenSSL::SSL OpenSSL::Crypto)
+
 find_library(READLINE_LIBRARY NAMES readline PATHS /usr/lib/x86_64-linux-gnu /usr/lib/)
 if (READLINE_LIBRARY)
     target_link_libraries(${PROJECT_NAME} ${READLINE_LIBRARY})
