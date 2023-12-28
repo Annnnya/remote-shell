@@ -16,7 +16,7 @@
 #include <openssl/err.h>
 
 #include <pthread.h>
-#include <atomic>
+#include <openssl/bio.h>
 
 int lastExitCode;
 
@@ -25,16 +25,15 @@ struct ThreadParams {
     int pipefd;
 };
 
-std::atomic<bool> exitFlag(false);
 
 void* threadFunc(void* arg) {
     ThreadParams* params = (ThreadParams*)arg;
     char buffer[1024];
     int bytesRead;
-    while ((bytesRead = read(params->pipefd, buffer, sizeof(buffer) - 1)) > 0 && !exitFlag) {
-        buffer[bytesRead] = '\0';
-        if (SSL_write(params->ssl, buffer, bytesRead) <= 0) {
-            break;
+    while ((bytesRead = read(params->pipefd, buffer, sizeof(buffer) - 1)) > 0) {
+            buffer[bytesRead] = '\0';
+            if (SSL_write(params->ssl, buffer, bytesRead) <= 0) {
+                break;
         }
     }
     return nullptr;
@@ -56,10 +55,10 @@ void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in
     int pipefds[2];
     pipe(pipefds);
     pthread_t thread;
-    ThreadParams params = { ssl, pipefds[0] };
-    pthread_create(&thread, nullptr, threadFunc, &params);
     int original_stdout = dup(STDOUT_FILENO);
     int original_stderr = dup(STDERR_FILENO);
+    ThreadParams params = { ssl, pipefds[0] };
+    pthread_create(&thread, nullptr, threadFunc, &params);
     dup2(pipefds[1], STDOUT_FILENO);
     dup2(pipefds[1], STDERR_FILENO);
 
@@ -113,15 +112,13 @@ void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in
             std::cerr << "Error getting current working directory" << std::endl;
         }
     }
-    exitFlag = true;
-    write(original_stdout, "ended\n", 6);
+    // write(original_stdout, "ended\n", 6);
+    dup2(original_stdout, STDOUT_FILENO);
+    dup2(original_stderr, STDERR_FILENO);
     close(pipefds[1]);
     pthread_join(thread, nullptr);
     close(pipefds[0]);
-    write(original_stdout, "joined\n", 7);
-    dup2(original_stdout, STDOUT_FILENO);
-    dup2(original_stderr, STDERR_FILENO);
-
+    // write(original_stdout, "joined\n", 7);
     close(original_stdout);
     close(original_stderr);
 }
@@ -247,6 +244,7 @@ int main(int argc, char *argv[]) {
 
                 ssl = SSL_new(ctx);
                 SSL_set_fd(ssl, clientSocket);
+                BIO_set_nbio(SSL_get_rbio(ssl), 1);
 
                 if (SSL_accept(ssl) <= 0) {
                     ERR_print_errors_fp(stderr);
