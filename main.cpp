@@ -15,10 +15,32 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include <pthread.h>
+#include <atomic>
+
 int lastExitCode;
 
+struct ThreadParams {
+    SSL* ssl;
+    int pipefd;
+};
+
+std::atomic<bool> exitFlag(false);
+
+void* threadFunc(void* arg) {
+    ThreadParams* params = (ThreadParams*)arg;
+    char buffer[1024];
+    int bytesRead;
+    while ((bytesRead = read(params->pipefd, buffer, sizeof(buffer) - 1)) > 0 && !exitFlag) {
+        buffer[bytesRead] = '\0';
+        if (SSL_write(params->ssl, buffer, bytesRead) <= 0) {
+            break;
+        }
+    }
+    return nullptr;
+}
+
 void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in clientAddress) {
-    //to implement client logic here
     char buffer[1024];
     int bytesRead;
 
@@ -30,8 +52,17 @@ void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in
     size_t counter = 0;
     bool script_execution = false;
 
-    dup2(SSL_get_fd(ssl), STDOUT_FILENO);
-    dup2(SSL_get_fd(ssl), STDERR_FILENO);
+    //to redirect output to client
+    int pipefds[2];
+    pipe(pipefds);
+    pthread_t thread;
+    ThreadParams params = { ssl, pipefds[0] };
+    pthread_create(&thread, nullptr, threadFunc, &params);
+    int original_stdout = dup(STDOUT_FILENO);
+    int original_stderr = dup(STDERR_FILENO);
+    dup2(pipefds[1], STDOUT_FILENO);
+    dup2(pipefds[1], STDERR_FILENO);
+
 
     if (getcwd(cwd, sizeof(cwd)) != nullptr) {
         std::string prompt = " " + std::string(cwd) + " $ ";
@@ -40,7 +71,7 @@ void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in
         std::cerr << "Error getting current working directory" << std::endl;
     }
 
-    while ((bytesRead = read(clientSocket, buffer, sizeof(buffer))) > 0) {
+    while ((bytesRead = SSL_read(ssl, buffer, sizeof(buffer))) > 0) {
 
         buffer[bytesRead] = '\0';
         input = buffer;
@@ -49,7 +80,6 @@ void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in
         }
         SafeWriteLog(input, getSocketAddressString(clientAddress), logFileDescriptor);
 
-        // main executing code here
         if (!input.empty()) {
             add_history(input.c_str());
             if (containsPipeline(input)) {
@@ -83,8 +113,18 @@ void handleClient(SSL* ssl, int clientSocket, int logFileDescriptor, sockaddr_in
             std::cerr << "Error getting current working directory" << std::endl;
         }
     }
-}
+    exitFlag = true;
+    write(original_stdout, "ended\n", 6);
+    close(pipefds[1]);
+    pthread_join(thread, nullptr);
+    close(pipefds[0]);
+    write(original_stdout, "joined\n", 7);
+    dup2(original_stdout, STDOUT_FILENO);
+    dup2(original_stderr, STDERR_FILENO);
 
+    close(original_stdout);
+    close(original_stderr);
+}
 
 
 
@@ -143,6 +183,14 @@ int main(int argc, char *argv[]) {
     //establish connection and accept clients
     if (isServer){
 
+        SSL_CTX *ctx;
+
+        signal(SIGPIPE, SIG_IGN);
+
+        ctx = create_context();
+
+        configure_context(ctx);
+
         int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
         if (serverSocket == -1) {
             std::cerr << "Error creating socket\n";
@@ -174,15 +222,6 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        int sock;
-        SSL_CTX *ctx;
-
-        /* Ignore broken pipe signals */
-        signal(SIGPIPE, SIG_IGN);
-
-        ctx = create_context();
-
-        configure_context(ctx);
 
         while (true) {
             //handling clients
@@ -205,22 +244,20 @@ int main(int argc, char *argv[]) {
             if (pid == 0) {
                 // Child process - continues working with client
                 close(serverSocket);
-                int original_stdout = dup(STDOUT_FILENO);
-                int original_stderr = dup(STDERR_FILENO);
 
                 ssl = SSL_new(ctx);
                 SSL_set_fd(ssl, clientSocket);
+
+                if (SSL_accept(ssl) <= 0) {
+                    ERR_print_errors_fp(stderr);
+                } else {
+                    SSL_write(ssl, "connection established\n", 23);
+                }
                 handleClient(ssl, clientSocket, logFileDescriptor, clientAddress);
 
                 SSL_shutdown(ssl);
                 SSL_free(ssl);
                 close(clientSocket);
-
-                dup2(original_stdout, STDOUT_FILENO);
-                dup2(original_stderr, STDERR_FILENO);
-
-                close(original_stdout);
-                close(original_stderr);
 
                 std::cout << "Connection with "<< getSocketAddressString(clientAddress) << " ended." << std::endl;
                 SafeWriteLog("Connection ended", getSocketAddressString(clientAddress), logFileDescriptor);
@@ -235,6 +272,7 @@ int main(int argc, char *argv[]) {
         }
 
         close(serverSocket);
+        SSL_CTX_free(ctx);
     }
 
 
